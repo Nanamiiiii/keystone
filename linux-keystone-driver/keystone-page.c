@@ -78,7 +78,17 @@ int epm_init(struct epm* epm, unsigned int min_pages)
 
 int utm_destroy(struct utm* utm){
 
-  if(utm->ptr != NULL){
+  if (!utm->ptr || !utm->size) {
+    return 0;
+  }
+
+  if (utm->is_cma) {
+    dma_free_coherent(keystone_dev.this_device,
+      utm->size,
+      utm->ptr,
+      __pa(utm->ptr)
+    );
+  } else {
     free_pages((vaddr_t)utm->ptr, utm->order);
   }
 
@@ -90,15 +100,34 @@ int utm_init(struct utm* utm, size_t untrusted_size)
   unsigned long req_pages = 0;
   unsigned long order = 0;
   unsigned long count;
+  phys_addr_t device_phys_addr = 0;
+  utm->is_cma = 0;
   req_pages += PAGE_UP(untrusted_size)/PAGE_SIZE;
   order = ilog2(req_pages - 1) + 1;
   count = 0x1 << order;
 
   utm->order = order;
 
-  /* Currently, UTM does not utilize CMA.
-   * It is always allocated from the buddy allocator */
+  /* If buddy allocator fails allocation, 
+     fallback to CMA.                      */
   utm->ptr = (void*) __get_free_pages(GFP_HIGHUSER, order);
+
+#ifdef CONFIG_CMA
+  /* Use CMA */
+  if (!utm->ptr) {
+    keystone_info("utm buddy allocation failed\n"); 
+    keystone_info("try to allocate by cma\n");
+    utm->is_cma = 1;
+    utm->ptr = (void *) dma_alloc_coherent(keystone_dev.this_device,
+      count * PAGE_SIZE,
+      &device_phys_addr,
+      GFP_KERNEL | __GFP_DMA32);
+
+    if(!device_phys_addr)
+      utm->ptr = NULL;
+  }
+#endif
+
   if (!utm->ptr) {
     keystone_err("failed to allocate UTM (size = %ld bytes)\n",(1<<order));
     return -ENOMEM;

@@ -48,6 +48,7 @@ struct utm {
   void* ptr;
   size_t size;
   unsigned long order;
+  bool is_cma;
 };
 
 
