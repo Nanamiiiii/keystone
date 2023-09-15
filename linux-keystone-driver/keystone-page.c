@@ -110,13 +110,14 @@ int utm_init(struct utm* utm, size_t untrusted_size)
 
   /* If buddy allocator fails allocation, 
      fallback to CMA.                      */
-  utm->ptr = (void*) __get_free_pages(GFP_HIGHUSER, order);
+  if (order < MAX_ORDER)
+    utm->ptr = (void*) __get_free_pages(GFP_HIGHUSER, order);
 
 #ifdef CONFIG_CMA
   /* Use CMA */
   if (!utm->ptr) {
-    keystone_info("utm buddy allocation failed\n"); 
-    keystone_info("try to allocate by cma\n");
+    keystone_warn("utm buddy allocation failed\n"); 
+    keystone_warn("try to allocate by cma\n");
     utm->is_cma = 1;
     utm->ptr = (void *) dma_alloc_coherent(keystone_dev.this_device,
       count * PAGE_SIZE,
